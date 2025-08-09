@@ -1,8 +1,3 @@
----
-
-## **Project 3: Stock Price Predictor**
-**File Name:** `project-3-stock-price-predictor/README.md`
-```markdown
 # Stock Price Predictor (Time Series Forecasting)
 
 A machine learning model that predicts future stock prices using **LSTM (Long Short-Term Memory)** networks.
@@ -20,3 +15,9 @@ A machine learning model that predicts future stock prices using **LSTM (Long Sh
 - yfinance API
 
 ## Structure
+## How to Run
+```bash
+git clone https://github.com/CurtisRaympi/ai-engineering-portfolio.git
+cd ai-engineering-portfolio/project-3-stock-price-predictor/
+pip install -r requirements.txt
+python predictor.py
