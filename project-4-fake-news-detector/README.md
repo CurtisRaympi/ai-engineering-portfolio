@@ -1,8 +1,3 @@
----
-
-## **Project 4: Fake News Detector**
-**File Name:** `project-4-fake-news-detector/README.md`
-```markdown
 # Fake News Detector
 
 A text classification model that detects whether news articles are **real** or **fake** using NLP techniques.
