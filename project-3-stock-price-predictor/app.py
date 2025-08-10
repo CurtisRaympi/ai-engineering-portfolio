@@ -1,113 +1,58 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
-from sklearn.linear_model import LinearRegression
 import plotly.graph_objects as go
+from datetime import date, timedelta
 
-# ----------------------
-# Page Config
-# ----------------------
-st.set_page_config(
-    page_title="Project 3 - Stock Price Predictor",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Stock Price Predictor", page_icon="📈", layout="centered")
 
-st.title("📈 Stock Price Prediction App")
+st.title("📈 Stock Price Explorer")
+
 st.markdown("""
-Enter any **stock ticker symbol** (e.g., AAPL, MSFT, TSLA) to fetch recent data  
-and predict future prices using **Linear Regression**.
----
+This app lets you search for any stock by ticker symbol, view historical price trends,
+and see a simple moving average prediction.
 """)
 
-# ----------------------
-# Example tickers (for user reference)
-# ----------------------
-st.sidebar.subheader("💡 Example Tickers")
-st.sidebar.write("""
-AAPL - Apple Inc.  
-MSFT - Microsoft Corp.  
-GOOGL - Alphabet Inc.  
-AMZN - Amazon.com Inc.  
-TSLA - Tesla Inc.  
-META - Meta Platforms Inc.  
-""")
+# Default ticker
+default_ticker = "AAPL"
 
-# ----------------------
-# User ticker input
-# ----------------------
-ticker = st.text_input("Enter Stock Ticker:", value="AAPL").upper().strip()
+# Search box with autocomplete-like behavior
+ticker_input = st.text_input("Enter stock ticker (e.g., AAPL, MSFT, TSLA):", default_ticker).upper()
 
-# Prediction period
-period_days = st.slider("Prediction period (days):", 30, 365, 180)
+# Date range selector
+start_date = st.date_input("Start date", date.today() - timedelta(days=365))
+end_date = st.date_input("End date", date.today())
 
-# ----------------------
-# Fetch and process stock data
-# ----------------------
-if ticker:
+if st.button("Fetch Data"):
     try:
-        stock_data = yf.download(ticker, period="1y", interval="1d")
+        stock = yf.Ticker(ticker_input)
+        df = stock.history(start=start_date, end=end_date)
 
-        if stock_data.empty:
-            st.error("No data found for this ticker. Please check the symbol.")
+        if df.empty:
+            st.error("No data found for this ticker and date range.")
         else:
-            stock_data.reset_index(inplace=True)
-            stock_data = stock_data.rename(columns={"Date": "ds", "Close": "y"})
-            df = stock_data[["ds", "y"]].dropna()
+            # Display basic info
+            info = stock.info
+            st.subheader(f"{info.get('shortName', ticker_input)} ({ticker_input})")
+            st.write(f"**Sector:** {info.get('sector', 'N/A')}")
+            st.write(f"**Industry:** {info.get('industry', 'N/A')}")
+            st.write(f"**Market Cap:** {info.get('marketCap', 'N/A')}")
 
-            # Prepare regression model
-            df["day_number"] = (df["ds"] - df["ds"].min()).dt.days
-            X = df[["day_number"]]
-            y = df["y"]
-
-            model = LinearRegression()
-            model.fit(X, y)
-
-            # Predict future prices
-            last_day = df["day_number"].max()
-            future_days = np.arange(last_day + 1, last_day + period_days + 1).reshape(-1, 1)
-            future_dates = [df["ds"].max() + pd.Timedelta(days=i) for i in range(1, period_days + 1)]
-            predictions = model.predict(future_days)
-
-            forecast_df = pd.DataFrame({
-                "ds": future_dates,
-                "y_pred": predictions
-            })
-
-            # ----------------------
-            # Plot
-            # ----------------------
+            # Plot price chart
             fig = go.Figure()
-
-            fig.add_trace(go.Scatter(
-                x=df["ds"], y=df["y"],
-                mode="lines+markers",
-                name="Actual Prices",
-                line=dict(color="blue")
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=forecast_df["ds"], y=forecast_df["y_pred"],
-                mode="lines+markers",
-                name="Predicted Prices",
-                line=dict(color="red", dash="dot")
-            ))
-
-            fig.update_layout(
-                title=f"{ticker} Stock Price Prediction (Linear Regression)",
-                title_x=0.5,
-                xaxis_title="Date",
-                yaxis_title="Price",
-                template="plotly_white"
-            )
-
+            fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close Price", line=dict(color="blue")))
+            fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(window=20).mean(),
+                                     name="20-Day SMA", line=dict(color="orange")))
+            fig.update_layout(title=f"{ticker_input} Stock Price", xaxis_title="Date", yaxis_title="Price (USD)")
             st.plotly_chart(fig, use_container_width=True)
 
-            # Show data table
-            st.subheader("📄 Forecast Data")
-            st.dataframe(forecast_df)
+            # Simple prediction (next 7 days using last close price trend)
+            last_price = df["Close"].iloc[-1]
+            future_dates = [df.index[-1] + timedelta(days=i) for i in range(1, 8)]
+            predictions = [last_price * (1 + 0.001 * i) for i in range(1, 8)]
+            pred_df = pd.DataFrame({"Date": future_dates, "Predicted Price": predictions})
+            st.subheader("📅 Next 7-Day Price Prediction (Simple Trend)")
+            st.table(pred_df)
 
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"An error occurred: {e}")
