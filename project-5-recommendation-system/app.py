@@ -156,6 +156,6 @@ st.markdown("""
 ---
 **Project 5: Recommendation System**  
 Built with Python, Pandas, Streamlit, and Altair for interactive data visualization.  
-Made with ❤️ by Curtis Raympi
+Made with ❤️ by Emmanuel Jaja
 """)
 
