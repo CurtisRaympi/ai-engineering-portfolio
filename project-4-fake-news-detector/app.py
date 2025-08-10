@@ -1,67 +1,97 @@
 import streamlit as st
-import pandas as pd
 import joblib
+import pandas as pd
 
-# Page config
-st.set_page_config(page_title="📰 Fake News Detector", page_icon="📰", layout="centered")
+st.set_page_config(
+    page_title="Fake News Detector",
+    page_icon="📰",
+    layout="centered"
+)
 
 st.title("📰 Fake News Detector")
 st.markdown("""
-Detect whether news articles are **Real** or **Fake** using a trained NLP model with TF-IDF vectorization
-and Logistic Regression.
+Enter news article text(s) below and let the AI determine whether they're **Real** or **Fake**.  
+Model trained with **TF-IDF** + **Logistic Regression**.
 ---
 """)
 
-# Load model and vectorizer
+# Load Model and Vectorizer
 @st.cache_resource
-def load_model():
+def load_assets():
     model = joblib.load("fake_news_model.pkl")
     vectorizer = joblib.load("vectorizer.pkl")
     return model, vectorizer
 
-model, vectorizer = load_model()
+model, vectorizer = load_assets()
 
-# Tabs for single or batch prediction
-tab1, tab2 = st.tabs(["📝 Single Article", "📂 Batch Upload"])
+# Mode Selection
+mode = st.radio(
+    "Choose Mode:",
+    ["Single Article", "Batch Mode (Multiple Articles)"],
+    index=0
+)
 
-# --- Single Article ---
-with tab1:
-    user_input = st.text_area("Enter the news article text:", height=200, placeholder="Paste your article here...")
-    
-    if st.button("Analyze Article"):
+if mode == "Single Article":
+    user_input = st.text_area("📝 Paste your news article text here:")
+
+    if st.button("🔍 Check News"):
         if user_input.strip():
-            vect_text = vectorizer.transform([user_input])
-            prediction = model.predict(vect_text)[0]
-            prob = model.predict_proba(vect_text)[0]
+            vect = vectorizer.transform([user_input])
+            prediction = model.predict(vect)[0]
             
-            label = "Fake News" if prediction == 1 else "Real News"
-            color = "red" if prediction == 1 else "green"
-            st.markdown(f"**Prediction:** <span style='color:{color}; font-size:20px'>{label}</span>", unsafe_allow_html=True)
-            st.progress(float(max(prob)))
-        else:
-            st.warning("Please enter an article to analyze.")
-
-# --- Batch Upload ---
-with tab2:
-    uploaded_file = st.file_uploader("Upload a CSV file with a 'text' column:", type=["csv"])
-    
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            if "text" not in df.columns:
-                st.error("CSV must contain a 'text' column.")
+            if prediction == 1:
+                st.error("🚨 This article is classified as **Fake News**.")
             else:
-                vect_texts = vectorizer.transform(df["text"])
-                predictions = model.predict(vect_texts)
-                df["Prediction"] = ["Fake News" if p == 1 else "Real News" for p in predictions]
-                st.success("Predictions completed!")
-                st.dataframe(df)
+                st.success("✅ This article is classified as **Real News**.")
+        else:
+            st.warning("⚠️ Please enter some text before checking.")
 
-                # Download option
-                csv = df.to_csv(index=False).encode("utf-8")
-                st.download_button("Download Predictions", data=csv, file_name="predictions.csv", mime="text/csv")
-        except Exception as e:
-            st.error(f"Error processing file: {e}")
+else:  # Batch Mode
+    st.markdown("""
+    **Instructions:**  
+    - Paste one article per line in the box below  
+    - OR upload a CSV file with a `text` column  
+    """)
 
-st.markdown("---")
-st.markdown("**Project 4: Fake News Detector** | Built with Scikit-learn, TF-IDF, and Logistic Regression.")
+    text_block = st.text_area("📄 Paste multiple articles (one per line):")
+    uploaded_file = st.file_uploader("Or upload CSV file", type=["csv"])
+
+    if st.button("📊 Check All"):
+        articles = []
+
+        # From textarea
+        if text_block.strip():
+            articles.extend([line.strip() for line in text_block.split("\n") if line.strip()])
+
+        # From CSV
+        if uploaded_file is not None:
+            try:
+                df_uploaded = pd.read_csv(uploaded_file)
+                if "text" in df_uploaded.columns:
+                    articles.extend(df_uploaded["text"].dropna().tolist())
+                else:
+                    st.error("CSV must contain a column named `text`.")
+            except Exception as e:
+                st.error(f"Error reading CSV: {e}")
+
+        if articles:
+            vect = vectorizer.transform(articles)
+            predictions = model.predict(vect)
+            results_df = pd.DataFrame({
+                "Article": articles,
+                "Prediction": ["Fake" if p == 1 else "Real" for p in predictions]
+            })
+            st.dataframe(results_df, use_container_width=True)
+        else:
+            st.warning("⚠️ Please provide some articles to check.")
+
+# Footer
+st.markdown("""
+---
+**How it works:**  
+- **TF-IDF** converts text into numerical features.  
+- **Logistic Regression** detects fake vs real patterns.  
+
+Made with ❤️ by Emmanuel Jaja
+""")
+
