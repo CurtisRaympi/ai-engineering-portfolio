@@ -1,80 +1,91 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
 from prophet import Prophet
 from prophet.plot import plot_plotly
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="📈 Stock Price Predictor", layout="centered")
-st.title("📈 Stock Price Predictor")
-
-# Sidebar inputs
-st.sidebar.header("Stock Settings")
-ticker = st.sidebar.text_input("Enter Stock Ticker (e.g. AAPL, TSLA):", "AAPL")
-years = st.sidebar.slider("Years to Predict:", 1, 4, 2)
-
-# Load data
-@st.cache_data
-def load_data(ticker):
-    data = yf.download(ticker, period="max")
-    if data.empty:
-        return None
-    data.reset_index(inplace=True)
-    return data
-
-data = load_data(ticker)
-
-if data is None or data.empty:
-    st.error("❌ No data found for the given ticker. Please try another symbol.")
-    st.stop()
-
-# Show raw data preview
-st.subheader("📊 Raw Data Preview")
-st.dataframe(data.tail())
-
-# Check if 'Close' exists
-if "Close" not in data.columns:
-    st.error("❌ 'Close' price data is missing. Unable to proceed.")
-    st.stop()
-
-# Prepare data for Prophet
-df = data[["Date", "Close"]].copy()
-df.rename(columns={"Date": "ds", "Close": "y"}, inplace=True)
-
-# Ensure correct types
-df["ds"] = pd.to_datetime(df["ds"], errors="coerce")
-df["y"] = pd.to_numeric(df["y"], errors="coerce")
-df.dropna(subset=["ds", "y"], inplace=True)
-
-if df.empty:
-    st.error("❌ No valid data after cleaning. Try a different stock ticker.")
-    st.stop()
-
-# Train Prophet model
-m = Prophet(daily_seasonality=True)
-m.fit(df)
-
-# Forecast
-future = m.make_future_dataframe(periods=years * 365)
-forecast = m.predict(future)
-
-# Plot forecast
-st.subheader("🔮 Stock Price Forecast")
-fig1 = plot_plotly(m, forecast)
-fig1.update_layout(
-    title=f"{ticker} Price Prediction",
-    xaxis_title="Date",
-    yaxis_title="Price (USD)",
-    template="plotly_white"
+# ----------------------
+# Page Config
+# ----------------------
+st.set_page_config(
+    page_title="Project 3 - Stock Price Predictor",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
-st.plotly_chart(fig1)
 
-# Custom chart: actual vs predicted
-st.subheader("📉 Historical vs Predicted Prices")
-fig2 = go.Figure()
-fig2.add_trace(go.Scatter(x=df["ds"], y=df["y"], name="Actual Price", line=dict(color="blue")))
-fig2.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat"], name="Predicted Price", line=dict(color="orange")))
-fig2.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Price (USD)")
-st.plotly_chart(fig2)
+st.title("📈 Stock Price Prediction App")
+st.markdown("""
+This app predicts future stock prices using **Facebook Prophet**.  
+Upload a CSV with columns `ds` (date) and `y` (price).  
+---
+""")
 
-st.caption("⚠️ This is a demo prediction model using Prophet. Do not use for financial decisions.")
+# ----------------------
+# File Upload
+# ----------------------
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+
+    # Check required columns
+    if "ds" not in df.columns or "y" not in df.columns:
+        st.error("CSV must contain 'ds' (date) and 'y' (price) columns.")
+    else:
+        # Convert 'ds' to datetime
+        df["ds"] = pd.to_datetime(df["ds"], errors="coerce")
+
+        # Ensure 'y' is numeric
+        df["y"] = pd.to_numeric(df["y"], errors="coerce")
+
+        # Drop rows with invalid values
+        df.dropna(subset=["ds", "y"], inplace=True)
+
+        if df.empty:
+            st.error("No valid data after cleaning. Please check your CSV.")
+        else:
+            # ----------------------
+            # User settings
+            # ----------------------
+            period = st.slider("Prediction period (days):", 30, 365, 180)
+
+            # ----------------------
+            # Fit Model
+            # ----------------------
+            m = Prophet()
+            m.fit(df)
+
+            future = m.make_future_dataframe(periods=period)
+            forecast = m.predict(future)
+
+            # ----------------------
+            # Forecast Plot
+            # ----------------------
+            st.subheader("📊 Forecast Plot")
+            fig1 = plot_plotly(m, forecast)
+            fig1.update_layout(
+                title="Stock Price Forecast",
+                title_x=0.5,
+                title_font=dict(size=22),
+                xaxis_title="Date",
+                yaxis_title="Price",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+
+            # ----------------------
+            # Components Plot
+            # ----------------------
+            st.subheader("📈 Forecast Components")
+            fig2 = m.plot_components(forecast)
+            st.pyplot(fig2)
+
+            # ----------------------
+            # Data Preview
+            # ----------------------
+            st.subheader("📄 Forecast Data")
+            st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
+
+else:
+    st.info("Please upload a CSV file to start.")
