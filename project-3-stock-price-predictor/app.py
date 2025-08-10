@@ -1,67 +1,68 @@
-# project-3-stock-price-predictor/app.py
 import streamlit as st
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 from prophet import Prophet
-from prophet.plot import plot_plotly, plot_components_plotly
-import plotly.graph_objs as go
+from prophet.plot import plot_plotly
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="📈 Stock Forecast (Prophet)", layout="wide")
-st.title("📈 Stock Price Forecast (Prophet)")
-st.markdown("Interactive forecast demo using Yahoo Finance + Prophet. Fast, interpretable, and deployable.")
+st.set_page_config(page_title="📈 Stock Price Predictor", layout="centered")
+st.title("📈 Stock Price Predictor (LSTM-style with Prophet)")
 
-# Sidebar controls
-st.sidebar.header("Forecast Settings")
-symbol = st.sidebar.text_input("Ticker symbol", value="AAPL")
-period = st.sidebar.selectbox("Historical period to download", ["1y","2y","3y","5y","10y"], index=2)
-horizon_days = st.sidebar.slider("Days to forecast", 7, 180, 30)
+# Sidebar for user inputs
+st.sidebar.header("Stock Settings")
+ticker = st.sidebar.text_input("Enter Stock Ticker (e.g. AAPL, TSLA):", "AAPL")
+years = st.sidebar.slider("Years to Predict:", 1, 4, 2)
 
-# Fetch data
-@st.cache_data(ttl=3600)
-def load_data(ticker, period):
-    df = yf.download(ticker, period=period)
-    df = df.reset_index()
-    df = df[['Date','Close']].rename(columns={'Date':'ds','Close':'y'})
-    return df
+# Load data
+@st.cache_data
+def load_data(ticker):
+    data = yf.download(ticker, period="max")
+    data.reset_index(inplace=True)
+    return data
 
-data_load_state = st.info(f"Downloading {symbol} data...")
 try:
-    df = load_data(symbol, period)
-    data_load_state.success("Data loaded ✅")
+    data = load_data(ticker)
 except Exception as e:
-    data_load_state.error(f"Error downloading data: {e}")
+    st.error(f"Error fetching data: {e}")
     st.stop()
 
-st.subheader(f"Historical Close Prices: {symbol.upper()}")
-st.dataframe(df.tail(10))
+# Show raw data
+st.subheader("📊 Raw Data Preview")
+st.write(data.tail())
 
-# Plot historical close
-fig_hist = go.Figure()
-fig_hist.add_trace(go.Scatter(x=df['ds'], y=df['y'], name='Close', line=dict(color='royalblue')))
-fig_hist.update_layout(title=f"{symbol.upper()} - Historical Close", xaxis_title="Date", yaxis_title="Price (USD)")
-st.plotly_chart(fig_hist, use_container_width=True)
+# Prepare data for Prophet
+df = data[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+df.dropna(inplace=True)  # Remove NaNs
+df["ds"] = pd.to_datetime(df["ds"])  # Ensure datetime format
+df["y"] = pd.to_numeric(df["y"], errors="coerce")  # Force numeric
+df.dropna(inplace=True)  # Drop rows that couldn't convert
 
-# Prepare & fit Prophet (fast)
-with st.spinner("Fitting Prophet model..."):
-    m = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
-    m.fit(df)
+# Train Prophet model
+m = Prophet(daily_seasonality=True)
+m.fit(df)
 
-# Create future dataframe and predict
-future = m.make_future_dataframe(periods=horizon_days)
+# Make future dataframe
+future = m.make_future_dataframe(periods=years * 365)
 forecast = m.predict(future)
 
-# Show forecast table & plot
-st.subheader("Forecast")
-st.dataframe(forecast[['ds','yhat','yhat_lower','yhat_upper']].tail(horizon_days))
+# Plot forecast using Plotly for better visuals
+st.subheader("🔮 Stock Price Forecast")
+fig1 = plot_plotly(m, forecast)
+fig1.update_layout(
+    title=f"{ticker} Price Prediction",
+    xaxis_title="Date",
+    yaxis_title="Price (USD)",
+    template="plotly_white",
+    font=dict(size=14)
+)
+st.plotly_chart(fig1)
 
-fig_forecast = plot_plotly(m, forecast)
-fig_forecast.update_layout(title=f"{symbol.upper()} - Forecast (next {horizon_days} days)")
-st.plotly_chart(fig_forecast, use_container_width=True)
+# Add a custom chart showing real vs predicted
+st.subheader("📉 Historical vs Predicted Prices")
+fig2 = go.Figure()
+fig2.add_trace(go.Scatter(x=df["ds"], y=df["y"], name="Actual Price", line=dict(color="blue")))
+fig2.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat"], name="Predicted Price", line=dict(color="orange")))
+fig2.update_layout(template="plotly_white", xaxis_title="Date", yaxis_title="Price (USD)")
+st.plotly_chart(fig2)
 
-# Show components
-st.subheader("Forecast Components (trend & seasonality)")
-fig_comp = plot_components_plotly(m, forecast)
-st.plotly_chart(fig_comp, use_container_width=True)
-
-st.markdown("---")
-st.markdown("Notes: Prophet is great for quick, interpretable forecasts. Replace with LSTM later if you need deep models.")
+st.caption("⚠️ This is a demo prediction model using Prophet. Do not use for financial decisions.")
