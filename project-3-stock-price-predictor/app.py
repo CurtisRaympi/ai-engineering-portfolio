@@ -1,127 +1,67 @@
+# project-3-stock-price-predictor/app.py
 import streamlit as st
-import pandas as pd
-import numpy as np
 import yfinance as yf
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM
+import pandas as pd
+from prophet import Prophet
+from prophet.plot import plot_plotly, plot_components_plotly
+import plotly.graph_objs as go
 
-# 🎯 Page Config
-st.set_page_config(page_title="📈 Stock Price Predictor", page_icon="📊", layout="wide")
+st.set_page_config(page_title="📈 Stock Forecast (Prophet)", layout="wide")
+st.title("📈 Stock Price Forecast (Prophet)")
+st.markdown("Interactive forecast demo using Yahoo Finance + Prophet. Fast, interpretable, and deployable.")
 
-# 🎨 Custom CSS for better look
-st.markdown("""
-    <style>
-    body {
-        color: #000000;
-        background-color: #F5F5F5;
-    }
-    .stTextInput>div>div>input {
-        color: black;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Sidebar controls
+st.sidebar.header("Forecast Settings")
+symbol = st.sidebar.text_input("Ticker symbol", value="AAPL")
+period = st.sidebar.selectbox("Historical period to download", ["1y","2y","3y","5y","10y"], index=2)
+horizon_days = st.sidebar.slider("Days to forecast", 7, 180, 30)
 
-# 🏷️ App Title
-st.title("📈 Stock Price Predictor")
-st.write("Predict future stock prices using LSTM Neural Networks.")
+# Fetch data
+@st.cache_data(ttl=3600)
+def load_data(ticker, period):
+    df = yf.download(ticker, period=period)
+    df = df.reset_index()
+    df = df[['Date','Close']].rename(columns={'Date':'ds','Close':'y'})
+    return df
 
-# 📝 User input
-stock_symbol = st.text_input("Enter Stock Symbol (e.g., AAPL, MSFT, TSLA):", "AAPL")
-n_days = st.slider("Days to Predict:", min_value=5, max_value=60, value=30)
-
-# 📥 Download Stock Data
-st.subheader("Historical Stock Data")
+data_load_state = st.info(f"Downloading {symbol} data...")
 try:
-    data = yf.download(stock_symbol, start="2015-01-01", end=pd.Timestamp.today().strftime('%Y-%m-%d'))
+    df = load_data(symbol, period)
+    data_load_state.success("Data loaded ✅")
 except Exception as e:
-    st.error(f"Error fetching data: {e}")
+    data_load_state.error(f"Error downloading data: {e}")
     st.stop()
 
-if data.empty:
-    st.error("No data found for this symbol. Please check and try again.")
-    st.stop()
+st.subheader(f"Historical Close Prices: {symbol.upper()}")
+st.dataframe(df.tail(10))
 
-st.dataframe(data.tail())
+# Plot historical close
+fig_hist = go.Figure()
+fig_hist.add_trace(go.Scatter(x=df['ds'], y=df['y'], name='Close', line=dict(color='royalblue')))
+fig_hist.update_layout(title=f"{symbol.upper()} - Historical Close", xaxis_title="Date", yaxis_title="Price (USD)")
+st.plotly_chart(fig_hist, use_container_width=True)
 
-# 📊 Plot Historical Data
-fig, ax = plt.subplots(figsize=(10, 4))
-ax.plot(data['Close'], label='Closing Price', color='blue')
-ax.set_title(f"{stock_symbol} Closing Price History", fontsize=16)
-ax.set_xlabel("Date")
-ax.set_ylabel("Price USD")
-ax.legend()
-st.pyplot(fig)
+# Prepare & fit Prophet (fast)
+with st.spinner("Fitting Prophet model..."):
+    m = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
+    m.fit(df)
 
-# 📦 Prepare Data for LSTM
-df = data[['Close']].values
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(df)
+# Create future dataframe and predict
+future = m.make_future_dataframe(periods=horizon_days)
+forecast = m.predict(future)
 
-train_size = int(len(scaled_data) * 0.8)
-train_data = scaled_data[:train_size]
-test_data = scaled_data[train_size:]
+# Show forecast table & plot
+st.subheader("Forecast")
+st.dataframe(forecast[['ds','yhat','yhat_lower','yhat_upper']].tail(horizon_days))
 
-def create_dataset(dataset, time_step=60):
-    X, Y = [], []
-    for i in range(len(dataset) - time_step - 1):
-        X.append(dataset[i:(i + time_step), 0])
-        Y.append(dataset[i + time_step, 0])
-    return np.array(X), np.array(Y)
+fig_forecast = plot_plotly(m, forecast)
+fig_forecast.update_layout(title=f"{symbol.upper()} - Forecast (next {horizon_days} days)")
+st.plotly_chart(fig_forecast, use_container_width=True)
 
-time_step = 60
-X_train, y_train = create_dataset(train_data, time_step)
-X_test, y_test = create_dataset(test_data, time_step)
+# Show components
+st.subheader("Forecast Components (trend & seasonality)")
+fig_comp = plot_components_plotly(m, forecast)
+st.plotly_chart(fig_comp, use_container_width=True)
 
-X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
-X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
-
-# 🧠 Build LSTM Model
-model = Sequential([
-    LSTM(50, return_sequences=True, input_shape=(time_step, 1)),
-    LSTM(50, return_sequences=False),
-    Dense(25),
-    Dense(1)
-])
-model.compile(optimizer='adam', loss='mean_squared_error')
-
-with st.spinner("Training the LSTM model... ⏳"):
-    model.fit(X_train, y_train, batch_size=32, epochs=5, verbose=0)
-
-# 📈 Predictions
-train_predict = model.predict(X_train)
-test_predict = model.predict(X_test)
-
-train_predict = scaler.inverse_transform(train_predict)
-test_predict = scaler.inverse_transform(test_predict)
-
-# 📅 Predict Future
-last_60_days = scaled_data[-60:]
-future_input = last_60_days.reshape(1, -1)
-temp_input = list(future_input[0])
-
-future_predictions = []
-for _ in range(n_days):
-    x_input = np.array(temp_input[-60:]).reshape(1, 60, 1)
-    yhat = model.predict(x_input, verbose=0)
-    temp_input.append(yhat[0][0])
-    future_predictions.append(yhat[0][0])
-
-future_predictions = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
-
-# 📊 Plot Future Predictions
-future_dates = pd.date_range(start=data.index[-1] + pd.Timedelta(days=1), periods=n_days)
-fig2, ax2 = plt.subplots(figsize=(10, 4))
-ax2.plot(data['Close'], label='Historical Price', color='blue')
-ax2.plot(future_dates, future_predictions, label='Predicted Price', color='red')
-ax2.set_title(f"{stock_symbol} Price Prediction", fontsize=16)
-ax2.set_xlabel("Date")
-ax2.set_ylabel("Price USD")
-ax2.legend()
-st.pyplot(fig2)
-
-# ✅ Show Predictions Table
-pred_df = pd.DataFrame({"Date": future_dates, "Predicted Price": future_predictions.flatten()})
-st.subheader("📅 Predicted Prices")
-st.dataframe(pred_df)
+st.markdown("---")
+st.markdown("Notes: Prophet is great for quick, interpretable forecasts. Replace with LSTM later if you need deep models.")
