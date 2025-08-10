@@ -54,4 +54,4 @@ for sender, message in st.session_state.chat_history:
         )
 
 st.markdown("---")
-st.markdown("Developed by **Curtis Raympi** | [GitHub](https://github.com/CurtisRaympi) | [LinkedIn](https://www.linkedin.com/in/curtis-raympi-3047b2377)")
+st.markdown("Developed by **Emmanuel Jaja** | [GitHub](https://github.com/Emmanueljaja) | [LinkedIn](https://www.linkedin.com/in/Emmanuel jaja)")
