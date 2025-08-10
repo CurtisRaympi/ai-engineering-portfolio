@@ -1,5 +1,4 @@
 # Stock Price Predictor using LSTM
-# Curtis Raympi
 
 import numpy as np
 import pandas as pd
