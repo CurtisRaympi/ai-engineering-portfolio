@@ -87,5 +87,3 @@ if uploaded_file:
             st.subheader("📄 Forecast Data")
             st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
 
-else:
-    st.info("Please upload a CSV file to start.")
