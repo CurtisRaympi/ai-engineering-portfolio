@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-from prophet import Prophet
-from prophet.plot import plot_plotly
+import numpy as np
+import yfinance as yf
+from sklearn.linear_model import LinearRegression
 import plotly.graph_objects as go
 
 # ----------------------
@@ -16,74 +17,97 @@ st.set_page_config(
 
 st.title("📈 Stock Price Prediction App")
 st.markdown("""
-This app predicts future stock prices using **Facebook Prophet**.  
-Upload a CSV with columns `ds` (date) and `y` (price).  
+Enter any **stock ticker symbol** (e.g., AAPL, MSFT, TSLA) to fetch recent data  
+and predict future prices using **Linear Regression**.
 ---
 """)
 
 # ----------------------
-# File Upload
+# Example tickers (for user reference)
 # ----------------------
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+st.sidebar.subheader("💡 Example Tickers")
+st.sidebar.write("""
+AAPL - Apple Inc.  
+MSFT - Microsoft Corp.  
+GOOGL - Alphabet Inc.  
+AMZN - Amazon.com Inc.  
+TSLA - Tesla Inc.  
+META - Meta Platforms Inc.  
+""")
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+# ----------------------
+# User ticker input
+# ----------------------
+ticker = st.text_input("Enter Stock Ticker:", value="AAPL").upper().strip()
 
-    # Check required columns
-    if "ds" not in df.columns or "y" not in df.columns:
-        st.error("CSV must contain 'ds' (date) and 'y' (price) columns.")
-    else:
-        # Convert 'ds' to datetime
-        df["ds"] = pd.to_datetime(df["ds"], errors="coerce")
+# Prediction period
+period_days = st.slider("Prediction period (days):", 30, 365, 180)
 
-        # Ensure 'y' is numeric
-        df["y"] = pd.to_numeric(df["y"], errors="coerce")
+# ----------------------
+# Fetch and process stock data
+# ----------------------
+if ticker:
+    try:
+        stock_data = yf.download(ticker, period="1y", interval="1d")
 
-        # Drop rows with invalid values
-        df.dropna(subset=["ds", "y"], inplace=True)
-
-        if df.empty:
-            st.error("No valid data after cleaning. Please check your CSV.")
+        if stock_data.empty:
+            st.error("No data found for this ticker. Please check the symbol.")
         else:
-            # ----------------------
-            # User settings
-            # ----------------------
-            period = st.slider("Prediction period (days):", 30, 365, 180)
+            stock_data.reset_index(inplace=True)
+            stock_data = stock_data.rename(columns={"Date": "ds", "Close": "y"})
+            df = stock_data[["ds", "y"]].dropna()
+
+            # Prepare regression model
+            df["day_number"] = (df["ds"] - df["ds"].min()).dt.days
+            X = df[["day_number"]]
+            y = df["y"]
+
+            model = LinearRegression()
+            model.fit(X, y)
+
+            # Predict future prices
+            last_day = df["day_number"].max()
+            future_days = np.arange(last_day + 1, last_day + period_days + 1).reshape(-1, 1)
+            future_dates = [df["ds"].max() + pd.Timedelta(days=i) for i in range(1, period_days + 1)]
+            predictions = model.predict(future_days)
+
+            forecast_df = pd.DataFrame({
+                "ds": future_dates,
+                "y_pred": predictions
+            })
 
             # ----------------------
-            # Fit Model
+            # Plot
             # ----------------------
-            m = Prophet()
-            m.fit(df)
+            fig = go.Figure()
 
-            future = m.make_future_dataframe(periods=period)
-            forecast = m.predict(future)
+            fig.add_trace(go.Scatter(
+                x=df["ds"], y=df["y"],
+                mode="lines+markers",
+                name="Actual Prices",
+                line=dict(color="blue")
+            ))
 
-            # ----------------------
-            # Forecast Plot
-            # ----------------------
-            st.subheader("📊 Forecast Plot")
-            fig1 = plot_plotly(m, forecast)
-            fig1.update_layout(
-                title="Stock Price Forecast",
+            fig.add_trace(go.Scatter(
+                x=forecast_df["ds"], y=forecast_df["y_pred"],
+                mode="lines+markers",
+                name="Predicted Prices",
+                line=dict(color="red", dash="dot")
+            ))
+
+            fig.update_layout(
+                title=f"{ticker} Stock Price Prediction (Linear Regression)",
                 title_x=0.5,
-                title_font=dict(size=22),
                 xaxis_title="Date",
                 yaxis_title="Price",
                 template="plotly_white"
             )
-            st.plotly_chart(fig1, use_container_width=True)
 
-            # ----------------------
-            # Components Plot
-            # ----------------------
-            st.subheader("📈 Forecast Components")
-            fig2 = m.plot_components(forecast)
-            st.pyplot(fig2)
+            st.plotly_chart(fig, use_container_width=True)
 
-            # ----------------------
-            # Data Preview
-            # ----------------------
+            # Show data table
             st.subheader("📄 Forecast Data")
-            st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
+            st.dataframe(forecast_df)
 
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
