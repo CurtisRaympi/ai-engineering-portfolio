@@ -1,82 +1,57 @@
 import streamlit as st
-import random
-import re
 
-st.set_page_config(page_title="NLP Chatbot", page_icon="🤖")
+st.set_page_config(page_title="🤖 AI Chatbot NLP", page_icon="🤖", layout="wide")
 
-st.markdown(
-    """
-    <style>
-    .bot {
-        background-color: #e0f7fa;
-        padding: 10px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        max-width: 70%;
+# Chatbot logic
+def chatbot_response(user_msg):
+    user_msg = user_msg.lower().strip()
+    responses = {
+        "hi": "Hello! 👋 How can I help you today?",
+        "hello": "Hi there! What can I do for you?",
+        "how are you": "I'm always running at 100%! How about you?",
+        "help": "I can answer your questions about AI, projects, or just chat for fun!",
+        "what can you do": "I can chat, tell jokes, answer AI questions, and more.",
+        "tell me a joke": "Why did the AI go to therapy? Because it had too many neural issues! 🤖😂",
+        "bye": "Goodbye! Have a wonderful day! 👋",
+        "thank you": "You're welcome! Always here to help.",
     }
-    .user {
-        background-color: #ffe0b2;
-        padding: 10px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        max-width: 70%;
-        margin-left: auto;
-    }
-    .chat-container {
-        max-width: 700px;
-        margin: auto;
-        background: #fafafa;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 0 10px #ccc;
-    }
-    .header {
-        text-align: center;
-        font-size: 2.5rem;
-        margin-bottom: 10px;
-        color: #0077b6;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    return responses.get(user_msg, "Hmm, I’m not sure about that. Could you rephrase?")
 
-st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-st.markdown('<div class="header">🤖 NLP Chatbot</div>', unsafe_allow_html=True)
+# Keep chat history in session
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-# Define conversation patterns and responses
-pairs = [
-    (r"hi|hello|hey", ["Hello!", "Hi there!", "Hey! How can I assist you?"]),
-    (r"how are you ?", ["I'm doing great, thanks!", "Feeling good! How about you?"]),
-    (r"what is your name ?", ["I am your friendly chatbot.", "You can call me Chatbot."]),
-    (r"what can you do ?", ["I can chat with you, answer simple questions, and help you learn NLP!"]),
-    (r"tell me a joke", ["Why did the computer show up at work late? It had a hard drive!", "I would tell you a UDP joke, but you might not get it."]),
-    (r"thank you|thanks", ["You're welcome!", "No problem!", "Glad to help!"]),
-    (r"quit|exit|bye", ["Goodbye! Have a great day!", "See you later!", "Chat with you soon!"]),
-    (r"(.*)", ["Sorry, I didn't understand that.", "Can you rephrase?", "I'm still learning. Can you try saying that differently?"])
-]
+# Sidebar
+with st.sidebar:
+    st.title("About This Chatbot")
+    st.write("This chatbot is part of Curtis Raympi's AI Engineering Portfolio.")
+    st.write("Built using Streamlit and basic NLP logic.")
 
-def chatbot_response(user_input):
-    for pattern, responses in pairs:
-        if re.search(pattern, user_input, re.IGNORECASE):
-            return random.choice(responses)
-    return "I’m not sure how to respond to that."
+# Main title
+st.title("🤖 AI Chatbot with NLP")
 
-# Chat history in session state
-if "history" not in st.session_state:
-    st.session_state.history = []
+# User input
+with st.form(key="chat_form", clear_on_submit=True):
+    user_input = st.text_input("You:", placeholder="Type something...")
+    submitted = st.form_submit_button("Send")
 
-user_input = st.text_input("You:", "")
+if submitted and user_input.strip():
+    st.session_state.chat_history.append(("user", user_input))
+    bot_reply = chatbot_response(user_input)
+    st.session_state.chat_history.append(("bot", bot_reply))
 
-if user_input:
-    response = chatbot_response(user_input)
-    st.session_state.history.append(("user", user_input))
-    st.session_state.history.append(("bot", response))
-
-for sender, message in st.session_state.history:
+# Display chat
+for sender, message in st.session_state.chat_history:
     if sender == "user":
-        st.markdown(f'<div class="user">{message}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background:#DCF8C6;padding:10px;border-radius:10px;margin:5px 0'><b>You:</b> {message}</div>",
+            unsafe_allow_html=True,
+        )
     else:
-        st.markdown(f'<div class="bot">{message}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background:#E6E6E6;padding:10px;border-radius:10px;margin:5px 0'><b>Bot:</b> {message}</div>",
+            unsafe_allow_html=True,
+        )
 
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("---")
+st.markdown("Developed by **Curtis Raympi** | [GitHub](https://github.com/CurtisRaympi) | [LinkedIn](https://www.linkedin.com/in/curtis-raympi-3047b2377)")
