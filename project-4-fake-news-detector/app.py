@@ -1,113 +1,59 @@
 import streamlit as st
 import joblib
 import pandas as pd
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-# Page config
-st.set_page_config(
-    page_title="Fake News Detector",
-    page_icon="📰",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
-
+# Page settings
+st.set_page_config(page_title="📰 Fake News Detector", layout="centered")
 st.title("📰 Fake News Detector")
-st.markdown("""
-Detect whether a news article is **real** or **fake** using a pre-trained machine learning model.
-""")
+st.markdown("Classify news articles as **Real** or **Fake** using NLP & Machine Learning.")
 
-# Load model and vectorizer once, cache to speed up
+# Load trained model and vectorizer
 @st.cache_resource
-def load_model_and_vectorizer():
-    model = joblib.load('fake_news_model.pkl')
-    vectorizer = joblib.load('vectorizer.pkl')
+def load_artifacts():
+    model = joblib.load("fake_news_model.pkl")
+    vectorizer = joblib.load("vectorizer.pkl")
     return model, vectorizer
 
-model, vectorizer = load_model_and_vectorizer()
+try:
+    model, vectorizer = load_artifacts()
+except Exception as e:
+    st.error(f"Error loading model/vectorizer: {e}")
+    st.stop()
 
-# Sidebar for additional info and testing multiple samples
-st.sidebar.header("Test Multiple Samples")
-upload_file = st.sidebar.file_uploader("Upload CSV file with news articles", type=['csv'])
-show_metrics = st.sidebar.checkbox("Show Model Performance Metrics")
+# User input
+user_input = st.text_area("✏️ Enter news article text below:", height=200, placeholder="Paste the full news text here...")
 
-# Single input
-user_input = st.text_area("Enter news article text to check:")
-
+# Prediction function
 def predict_news(text):
     vect = vectorizer.transform([text])
     prediction = model.predict(vect)
-    return prediction[0]
+    proba = model.predict_proba(vect)[0]
+    return prediction[0], proba
 
-# Single prediction
-if st.button("Check"):
+# Button to check news
+if st.button("🔍 Check News"):
     if user_input.strip():
-        prediction = predict_news(user_input)
-        label = "Fake News" if prediction == 1 else "Real News"
+        label, proba = predict_news(user_input)
 
-        # Colored result
-        if label == "Fake News":
-            st.error(f"Prediction: **{label}**")
-        else:
-            st.success(f"Prediction: **{label}**")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if label == 1:
+                st.success(f"✅ **Real News**\n\nConfidence: {proba[1]*100:.2f}%")
+            else:
+                st.error(f"🚨 **Fake News**\n\nConfidence: {proba[0]*100:.2f}%")
+        with col2:
+            st.metric(label="Real %", value=f"{proba[1]*100:.1f}%")
+            st.metric(label="Fake %", value=f"{proba[0]*100:.1f}%")
 
-        st.markdown("---")
-        st.info("**Tip:** Try entering other news texts or upload a CSV file for batch prediction.")
+        # Extra: show probability bar chart
+        chart_df = pd.DataFrame({
+            "Label": ["Fake", "Real"],
+            "Confidence": [proba[0]*100, proba[1]*100]
+        })
+        st.bar_chart(chart_df.set_index("Label"))
+
     else:
-        st.error("Please enter some text to analyze.")
+        st.warning("⚠️ Please enter some text to analyze.")
 
-# Batch prediction from CSV
-if upload_file is not None:
-    try:
-        df = pd.read_csv(upload_file)
-        if 'text' not in df.columns:
-            st.error("CSV must contain a 'text' column with news articles.")
-        else:
-            st.success(f"Loaded {len(df)} articles.")
-
-            df['prediction'] = df['text'].apply(lambda x: predict_news(str(x)))
-            df['label'] = df['prediction'].map({0: "Real News", 1: "Fake News"})
-
-            st.subheader("Batch Prediction Results")
-            st.dataframe(df[['text', 'label']])
-
-            # Download results
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Download predictions as CSV",
-                data=csv,
-                file_name='fake_news_predictions.csv',
-                mime='text/csv'
-            )
-
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
-
-# Show model performance if asked and if files exist
-if show_metrics:
-    try:
-        y_true = joblib.load('y_true.pkl')
-        y_pred = joblib.load('y_pred.pkl')
-
-        st.subheader("Model Performance Metrics")
-
-        report = classification_report(y_true, y_pred, target_names=['Real News', 'Fake News'], output_dict=True)
-        df_report = pd.DataFrame(report).transpose()
-        st.dataframe(df_report)
-
-        # Confusion matrix plot
-        cm = confusion_matrix(y_true, y_pred)
-        fig, ax = plt.subplots()
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=['Real', 'Fake'], yticklabels=['Real', 'Fake'], ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("Actual")
-        ax.set_title("Confusion Matrix")
-        st.pyplot(fig)
-
-    except Exception as e:
-        st.error("Performance metrics files not found or error loading them.")
-
-# Footer
 st.markdown("---")
-st.markdown("© 2025 Your Name | AI Engineering Portfolio")
+st.caption("Model trained with NLP text processing and scikit-learn. This is a demo, not a certified fact-checking tool.")
